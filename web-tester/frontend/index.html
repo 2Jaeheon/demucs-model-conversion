@@ -1,0 +1,246 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Demucs ONNX Web Tester</title>
+    <style>
+        :root {
+            --bg-color: #0f0f13;
+            --card-bg: rgba(30, 30, 40, 0.6);
+            --accent: #7c4dff;
+            --text-color: #ffffff;
+            --secondary-text: #a0a0b0;
+        }
+
+        body {
+            font-family: 'Inter', sans-serif;
+            background-color: var(--bg-color);
+            background-image: 
+                radial-gradient(circle at 10% 20%, rgba(100, 50, 255, 0.1) 0%, transparent 20%),
+                radial-gradient(circle at 90% 80%, rgba(255, 50, 100, 0.1) 0%, transparent 20%);
+            color: var(--text-color);
+            margin: 0;
+            display: flex;
+            flex-direction: column;
+            align-items: center;
+            min-height: 100vh;
+        }
+
+        h1 {
+            font-weight: 300;
+            letter-spacing: 2px;
+            margin-top: 50px;
+            text-shadow: 0 0 20px rgba(124, 77, 255, 0.5);
+        }
+
+        .container {
+            width: 90%;
+            max-width: 800px;
+            margin-top: 30px;
+        }
+
+        /* Upload Zone */
+        .upload-zone {
+            background: var(--card-bg);
+            backdrop-filter: blur(10px);
+            border: 2px dashed rgba(255, 255, 255, 0.1);
+            border-radius: 20px;
+            padding: 50px;
+            text-align: center;
+            transition: all 0.3s ease;
+            cursor: pointer;
+            margin-bottom: 30px;
+        }
+
+        .upload-zone:hover {
+            border-color: var(--accent);
+            transform: translateY(-2px);
+            box-shadow: 0 10px 30px rgba(0, 0, 0, 0.3);
+        }
+
+        .upload-zone.dragover {
+            background: rgba(124, 77, 255, 0.1);
+            border-color: var(--accent);
+        }
+
+        .upload-icon {
+            font-size: 48px;
+            margin-bottom: 15px;
+            color: var(--accent);
+        }
+
+        /* Results Area */
+        .results {
+            display: none;
+            opacity: 0;
+            transition: opacity 0.5s ease;
+        }
+        
+        .results.visible {
+            display: block;
+            opacity: 1;
+        }
+
+        .stem-card {
+            background: var(--card-bg);
+            backdrop-filter: blur(10px);
+            border-radius: 12px;
+            padding: 20px;
+            margin-bottom: 15px;
+            display: flex;
+            align-items: center;
+            border: 1px solid rgba(255, 255, 255, 0.05);
+        }
+
+        .stem-name {
+            width: 100px;
+            font-weight: bold;
+            color: var(--accent);
+            text-transform: uppercase;
+            font-size: 0.9em;
+            letter-spacing: 1px;
+        }
+
+        audio {
+            width: 100%;
+            filter: invert(0.9) hue-rotate(180deg);
+            height: 30px;
+        }
+
+        /* Loading */
+        .loader {
+            display: none;
+            border: 4px solid rgba(255, 255, 255, 0.1);
+            border-left-color: var(--accent);
+            border-radius: 50%;
+            width: 40px;
+            height: 40px;
+            animation: spin 1s linear infinite;
+            margin: 20px auto;
+        }
+
+        @keyframes spin {
+            0% { transform: rotate(0deg); }
+            100% { transform: rotate(360deg); }
+        }
+
+        .status-text {
+            text-align: center;
+            color: var(--secondary-text);
+            margin-top: 10px;
+            font-size: 0.9em;
+        }
+
+    </style>
+</head>
+<body>
+
+    <h1>DEMUCS <span style="color:var(--accent);">ONNX</span> TESTER</h1>
+
+    <div class="container">
+        <div class="upload-zone" id="dropZone">
+            <div class="upload-icon">♪</div>
+            <h3>Drop Audio Here</h3>
+            <p style="color: var(--secondary-text); font-size: 0.9em;">or click to browse (.mp3, .wav)</p>
+            <input type="file" id="fileInput" accept="audio/*" style="display: none;">
+        </div>
+
+        <div class="loader" id="loader"></div>
+        <p class="status-text" id="statusText"></p>
+
+        <div class="results" id="resultsArea">
+            <!-- Stems will be injected here -->
+        </div>
+    </div>
+
+    <script>
+        const dropZone = document.getElementById('dropZone');
+        const fileInput = document.getElementById('fileInput');
+        const loader = document.getElementById('loader');
+        const statusText = document.getElementById('statusText');
+        const resultsArea = document.getElementById('resultsArea');
+
+        // Drag & Drop
+        dropZone.addEventListener('click', () => fileInput.click());
+        dropZone.addEventListener('dragover', (e) => {
+            e.preventDefault();
+            dropZone.classList.add('dragover');
+        });
+        dropZone.addEventListener('dragleave', () => dropZone.classList.remove('dragover'));
+        dropZone.addEventListener('drop', (e) => {
+            e.preventDefault();
+            dropZone.classList.remove('dragover');
+            handleFile(e.dataTransfer.files[0]);
+        });
+        fileInput.addEventListener('change', (e) => handleFile(e.target.files[0]));
+
+        async function handleFile(file) {
+            if (!file) return;
+            
+            // UI Update
+            dropZone.style.display = 'none';
+            loader.style.display = 'block';
+            statusText.innerText = `Processing ${file.name}... this may take a moment (running on CPU)`;
+            resultsArea.innerHTML = '';
+            resultsArea.classList.remove('visible');
+
+            // Form Data
+            const formData = new FormData();
+            formData.append('file', file);
+
+            try {
+                // Determine API URL (assuming same host if served via FastAPI, else localhost:8000)
+                const apiUrl = '/separate'; 
+
+                const response = await fetch(apiUrl, {
+                    method: 'POST',
+                    body: formData
+                });
+
+                if (!response.ok) {
+                    throw new Error('Processing failed');
+                }
+
+                const data = await response.json();
+                
+                // Render Results
+                renderStems(data);
+                
+                loader.style.display = 'none';
+                statusText.innerText = '';
+                resultsArea.classList.add('visible');
+
+            } catch (error) {
+                console.error(error);
+                loader.style.display = 'none';
+                statusText.innerText = 'Error: ' + error.message;
+                dropZone.style.display = 'block';
+            }
+        }
+
+        function renderStems(paths) {
+            const stems = ['drums', 'bass', 'vocals', 'other'];
+            
+            stems.forEach(stem => {
+                if(paths[stem]) {
+                    const card = document.createElement('div');
+                    card.className = 'stem-card';
+                    card.innerHTML = `
+                        <div class="stem-name">${stem}</div>
+                        <audio controls src="${paths[stem]}"></audio>
+                    `;
+                    resultsArea.appendChild(card);
+                }
+            });
+            
+            // Add a "Try Again" button
+            const btn = document.createElement('div');
+            btn.style.textAlign = 'center';
+            btn.style.marginTop = '20px';
+            btn.innerHTML = `<button onclick="location.reload()" style="background:var(--accent); color:white; border:none; padding:10px 20px; border-radius:5px; cursor:pointer;">Process Another File</button>`;
+            resultsArea.appendChild(btn);
+        }
+    </script>
+</body>
+</html>

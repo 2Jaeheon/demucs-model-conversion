@@ -1,0 +1,9 @@
+fastapi
+uvicorn
+python-multipart
+onnxruntime
+torch
+torchaudio
+soundfile
+numpy
+-e ../demucs-for-onnx
